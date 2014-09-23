@@ -1,25 +1,34 @@
-logtool
-=======
+configlog
+=========
 
-A tool to make python logging configuration easier.
+A tool to make python logging configuration easier with sane defauls.
 
 
 Quick start
 -----------
 
-Configure logging::
+Imperative configuration:
 
-    import logtool
+.. code-block:: python
 
-    logtool.log('myproject', level='info', handler='console', formatter='default')
-    logtool.log('myproject.mymodule', 'error', 'sentry')
-    logtool.ignore('myproject.mymodule', level='debug')
+    import configlog
 
-Show stats for loggers::
+    configlog.defaults('django')
+    configlog.set('', 'error', file='%(here)s/logs/errors.log')
+    configlog.set('myproject', handler='console', formatter='default')
+    configlog.set('myproject.errors', 'error', 'sentry')
+    configlog.set('myproject.debug', level='debug', handler='null')
 
-    logtool.stats()
+Declarative configuration:
 
-Show tree of all available loggers::
+.. code-block:: python
 
-    logtool.loggers()
+    import configlog
 
+    configlog.configure([
+        'defaults=django'
+        'level=error file=%(here)s/logs/errors.log',
+        'myproject handler=console formatter=default',
+        'myproject.errors error sentry',
+        'myproject.debug level=debug handler=null',
+    ])
