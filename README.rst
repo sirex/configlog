@@ -1,7 +1,7 @@
 configlog
 =========
 
-A tool to make python logging configuration easier with sane defauls.
+Eache to use python logging configuration with sane defaults.
 
 
 Quick start
