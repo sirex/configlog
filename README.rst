@@ -18,6 +18,7 @@ Imperative configuration:
     configlog.set('myproject', handler='console', formatter='default')
     configlog.set('myproject.errors', 'error', 'sentry')
     configlog.set('myproject.debug', level='debug', handler='null')
+    configlog.configure()
 
 Declarative configuration:
 
@@ -32,3 +33,20 @@ Declarative configuration:
         'myproject.errors error sentry',
         'myproject.debug level=debug handler=null',
     ])
+
+Imperative and declarative configurations mixed together:
+
+.. code-block:: python
+
+    import configlog
+
+    (
+        configlog.Configurator().
+        defaults('django').
+        set('', level='error', file='%(here)s/logs/errors.log').
+        set('myproject', handler='console', formatter='default').
+        configure(
+            'myproject.errors error sentry',
+            'myproject.debug level=debug handler=null',
+        )
+    )
