@@ -1,3 +1,5 @@
+import collections
+
 LEVELS = ('CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'NOTSET')
 
 DEFAULTS = {
@@ -7,6 +9,12 @@ DEFAULTS = {
         }
     },
     'handlers': {
+        'null': {
+            'template': {
+                'class': 'logging.NullHandler',
+            },
+            'params': [],
+        },
         'console': {
             'template': {
                 'class': 'logging.StreamHandler',
@@ -40,6 +48,8 @@ def dict_config(settings):
         'loggers': {},
     }
 
+    handler_key_counters = collections.defaultdict(list)
+
     for params in settings:
         level = params.get('level', 'INFO').upper()
         assert level in LEVELS
@@ -48,7 +58,7 @@ def dict_config(settings):
         config['formatters'][formatter] = dict(DEFAULTS['formatters'][formatter])
 
         handler = params.get('handler', 'console')
-        handler_key = '_'.join([handler, level.lower(), formatter])
+        handler_key_items = [handler, level.lower(), formatter]
         handler_params = {}
         for key, default in DEFAULTS['handlers'][handler]['params']:
             if key == 'formatter':
@@ -63,7 +73,15 @@ def dict_config(settings):
                         handler=handler,
                         param=key,
                     ))
-                handler_params[key] = params[key]
+                value = params.get(key, default)
+                handler_params[key] = value
+                if value not in handler_key_counters[key]:
+                    handler_key_counters[key].append(value)
+                index = handler_key_counters[key].index(value)
+                if index > 0:
+                    handler_key_items.append('%s%d' % (key, index+1))
+
+        handler_key = '_'.join(handler_key_items)
         config['handlers'][handler_key] = dict(
             DEFAULTS['handlers'][handler]['template'],
             level=level, **handler_params
@@ -94,13 +112,17 @@ def dict_config(settings):
 
 
 def test_dict_config():
+    sentry_dsn_1 = 'http://public:secret@example.com/1'
+    sentry_dsn_2 = 'http://public:secret@example.com/2'
     trans = dict_config([
         dict(logger='', level='error', file='%(here)s/logs/errors.log'),
         dict(logger='myproject', handler='console', formatter='default'),
-        dict(logger='myproject', level='debug', handler='sentry',
-             dsn='http://public:secret@example.com/1'),
+        dict(logger='myproject', level='debug', handler='sentry', dsn=sentry_dsn_1),
+        dict(logger='myproject.errors', level='error', handler='sentry', dsn=sentry_dsn_2),
+        dict(logger='myproject.debug', level='debug', handler='null'),
     ])
-    assert trans == {
+
+    expected = {
         'version': 1,
         'disable_existing_loggers': True,
         'formatters': {
@@ -126,15 +148,36 @@ def test_dict_config():
                 'dsn': 'http://public:secret@example.com/1',
                 'level': 'DEBUG',
             },
+            'sentry_error_default_dsn2': {
+                'class': 'raven.handlers.logging.SentryHandler',
+                'dsn': 'http://public:secret@example.com/2',
+                'level': 'ERROR',
+            },
+            'null_debug_default': {
+                'class': 'logging.NullHandler',
+                'level': 'DEBUG',
+            },
         },
         'root': {
             'handlers': ['console_error_default'],
-            'level': 'ERROR'
+            'level': 'ERROR',
         },
         'loggers': {
             'myproject': {
                 'handlers': ['console_info_default', 'sentry_debug_default'],
-                'level': 'DEBUG'
-            }
+                'level': 'DEBUG',
+            },
+            'myproject.errors': {
+                'handlers': ['sentry_error_default_dsn2'],
+                'level': 'ERROR',
+            },
+            'myproject.debug': {
+                'handlers': ['null_debug_default'],
+                'level': 'DEBUG',
+            },
         },
     }
+
+    assert trans['handlers'] == expected['handlers']
+    assert trans['loggers'] == expected['loggers']
+    assert trans == expected
