@@ -1,126 +1,19 @@
-import collections
-
-LEVELS = ('CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'NOTSET')
-
-DEFAULTS = {
-    'formatters': {
-        'default': {
-            'format': '%(message)s',
-        }
-    },
-    'handlers': {
-        'null': {
-            'template': {
-                'class': 'logging.NullHandler',
-            },
-            'params': [],
-        },
-        'console': {
-            'template': {
-                'class': 'logging.StreamHandler',
-                'stream': 'ext://sys.stdout',
-            },
-            'params': [
-                ('formatter', None),
-            ],
-        },
-        'sentry': {
-            'template': {
-                'class': 'raven.handlers.logging.SentryHandler',
-            },
-            'params': [
-                ('dsn', None),
-            ],
-        },
-    },
-}
-
-
-class ConfigLogError(Exception): pass
-
-
-def dict_config(settings):
-    config = {
-        'version': 1,
-        'disable_existing_loggers': True,
-        'formatters': {},
-        'handlers': {},
-        'loggers': {},
-    }
-
-    handler_key_counters = collections.defaultdict(list)
-
-    for params in settings:
-        level = params.get('level', 'INFO').upper()
-        assert level in LEVELS
-
-        formatter = params.get('formatter', 'default')
-        config['formatters'][formatter] = dict(DEFAULTS['formatters'][formatter])
-
-        handler = params.get('handler', 'console')
-        handler_key_items = [handler, level.lower(), formatter]
-        handler_params = {}
-        for key, default in DEFAULTS['handlers'][handler]['params']:
-            if key == 'formatter':
-                handler_params[key] = formatter
-            else:
-                if default is None and key not in params:
-                    raise ConfigLogError((
-                        'Error while configuring logger for "{logger}". '
-                        '"{handler}" requires "{param}" parameter to be set.'
-                    ).format(
-                        logger=params['logger'],
-                        handler=handler,
-                        param=key,
-                    ))
-                value = params.get(key, default)
-                handler_params[key] = value
-                if value not in handler_key_counters[key]:
-                    handler_key_counters[key].append(value)
-                index = handler_key_counters[key].index(value)
-                if index > 0:
-                    handler_key_items.append('%s%d' % (key, index+1))
-
-        handler_key = '_'.join(handler_key_items)
-        config['handlers'][handler_key] = dict(
-            DEFAULTS['handlers'][handler]['template'],
-            level=level, **handler_params
-        )
-
-        if params['logger'] == '':
-            if 'root' not in config:
-                config['root'] = {
-                    'handlers': [],
-                    'level': level,
-                }
-            logger = config['root']
-        else:
-            if params['logger'] not in config['loggers']:
-                config['loggers'][params['logger']] = {
-                    'handlers': [],
-                    'level': level,
-                }
-            logger = config['loggers'][params['logger']]
-
-        logger['handlers'].append(handler_key)
-
-        if LEVELS.index(logger['level']) < LEVELS.index(level):
-            logger['level'] = level
-
-    return config
-
+import configlog
 
 
 def test_dict_config():
     sentry_dsn_1 = 'http://public:secret@example.com/1'
     sentry_dsn_2 = 'http://public:secret@example.com/2'
-    trans = dict_config([
-        dict(logger='', level='error', file='%(here)s/logs/errors.log'),
-        dict(logger='myproject', handler='console', formatter='default'),
-        dict(logger='myproject', level='debug', handler='sentry', dsn=sentry_dsn_1),
-        dict(logger='myproject.errors', level='error', handler='sentry', dsn=sentry_dsn_2),
-        dict(logger='myproject.debug', level='debug', handler='null'),
+
+    configlog.set([
+        'level=error file=%(here)s/logs/errors.log',
+        'myproject handler=console formatter=default',
+        'myproject level=debug handler=sentry dsn=%s' % sentry_dsn_1,
+        'myproject.errors level=error handler=sentry dsn=%s' % sentry_dsn_2,
+        'myproject.debug level=debug handler=null',
     ])
+    dict_config = configlog.get_dict_config()
+    configlog.reset()
 
     expected = {
         'version': 1,
@@ -178,6 +71,6 @@ def test_dict_config():
         },
     }
 
-    assert trans['handlers'] == expected['handlers']
-    assert trans['loggers'] == expected['loggers']
-    assert trans == expected
+    assert dict_config['handlers'] == expected['handlers']
+    assert dict_config['loggers'] == expected['loggers']
+    assert dict_config == expected
