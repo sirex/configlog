@@ -45,9 +45,9 @@ Imperative and declarative configurations mixed together:
         defaults('django').
         set('', level='error', file='%(here)s/logs/errors.log').
         set('myproject', handler='console', formatter='default').
-        set(
+        set([
             'myproject.errors error sentry',
             'myproject.debug level=debug handler=null',
-        ).
+        ]).
         configure()
     )
